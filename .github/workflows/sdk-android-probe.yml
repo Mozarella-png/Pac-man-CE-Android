@@ -1,0 +1,59 @@
+name: SDK Android probe
+
+# Manual only. Configures and builds the pinned ReXGlue SDK for Android (arm64) and
+# keeps the full log, so the platform-port work can be driven by real compiler errors.
+# This is a probe, not a release build: it is expected to fail until the port is done.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install NDK, CMake and Ninja
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)"
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" --install "ndk;27.2.12479018" "cmake;3.22.1"
+          sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+
+      - name: Fetch ReXGlue SDK, apply patches, init submodules
+        run: |
+          bash scripts/fetch_sdk.sh
+          git -C rexglue-sdk-src submodule update --init --recursive --depth 1 2>&1 | tee submodules.log
+
+      - name: Configure SDK for Android arm64
+        run: |
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          cmake -S rexglue-sdk-src -B build-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
+
+      - name: Build SDK (keep going, record every error)
+        run: |
+          cmake --build build-android -- -k 0 2>&1 | tee build.log || true
+
+      - name: Summarize errors
+        if: always()
+        run: |
+          { echo "## Configure errors"; grep -E "CMake Error" configure.log | head -50;
+            echo "## Build errors (first 200)"; grep -E "error:|FAILED:" build.log | head -200; } | tee summary.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-android-probe-logs
+          path: |
+            submodules.log
+            configure.log
+            build.log
+            summary.txt
