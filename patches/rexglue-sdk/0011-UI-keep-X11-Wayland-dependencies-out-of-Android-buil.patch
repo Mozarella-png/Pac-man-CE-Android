@@ -1,0 +1,30 @@
+From 389d2b00ca30efb6d47cca954a080099eec8156c Mon Sep 17 00:00:00 2001
+From: patch <a@b.c>
+Date: Thu, 22 Oct 2026 00:40:04 +0000
+Subject: [PATCH] UI: keep X11/Wayland dependencies out of Android builds
+
+Android also reports UNIX and not APPLE in CMake, so the desktop Linux block
+ran pkg-config for x11-xcb and wayland-client and failed the configure step.
+Android has neither; exclude it from that block.
+---
+ src/ui/CMakeLists.txt | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/ui/CMakeLists.txt b/src/ui/CMakeLists.txt
+index 5bd3dc5..f959ad4 100644
+--- a/src/ui/CMakeLists.txt
++++ b/src/ui/CMakeLists.txt
+@@ -146,7 +146,9 @@ if(REXGLUE_USE_VULKAN)
+ endif()
+ 
+ # Platform-specific dependencies
+-if(UNIX AND NOT APPLE)
++# Android also reports UNIX and not APPLE, but it has no X11 or Wayland: keep the desktop
++# Linux block out of it.
++if(UNIX AND NOT APPLE AND NOT ANDROID)
+     find_package(PkgConfig REQUIRED)
+     pkg_check_modules(X11_XCB REQUIRED x11-xcb)
+     # Required, not optional: vulkan/api.h pulls in <wayland-client.h> on every
+-- 
+2.43.0
+

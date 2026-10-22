@@ -9,9 +9,9 @@ Base: el port de PC Pacman-CE-PC-Recomp y el SDK
 ## Estado
 
 - [x] Estructura Gradle/CMake de la app "Pac-Man CE" (minSdk 29, arm64-v8a).
-- [x] Script `scripts/fetch_sdk.sh`: clona el SDK en el commit fijado y aplica los 10 parches.
+- [x] Script `scripts/fetch_sdk.sh`: clona el SDK en el commit fijado y aplica los 11 parches.
 - [x] Workflow `.github/workflows/build-apk.yml` (Ubuntu, NDK 27.2, Gradle 8.10.2).
-- [~] Capa de plataforma Android del SDK (en curso). Primer paso: workflow manual `sdk-android-probe.yml`, que configura y compila el SDK fijado para arm64 y guarda el log de errores, para trabajar con errores reales del compilador. Sin esto no hay juego: archivos de ventana, superficie,
+- [~] Capa de plataforma Android del SDK (en curso). Probe 1: el configure falló por X11/Wayland (parche 0011). Probe 2 pendiente. Primer paso: workflow manual `sdk-android-probe.yml`, que configura y compila el SDK fijado para arm64 y guarda el log de errores, para trabajar con errores reales del compilador. Sin esto no hay juego: archivos de ventana, superficie,
       input, fibers, memoria y filesystem para Android. El SDK fijado no los trae; se portarán desde
       la copia del SDK del fork Liberty Recompiled (licencia BSD-3, se conserva el aviso).
 - [ ] Puerto de la app del PC (`pacman_app.h`, `main.cpp`, etc.), que hoy usa `windows.h`.

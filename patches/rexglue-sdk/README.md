@@ -1,7 +1,7 @@
 # ReXGlue SDK patches
 
 This port is built against the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) (BSD-3-Clause) at commit
-`bd833a2ab69d305f99ddf57418fc38ffec8af93d` (2026-10-01, the nightly 0.10.0.24), with the ten patches in this
+`bd833a2ab69d305f99ddf57418fc38ffec8af93d` (2026-10-01, the nightly 0.10.0.24), with the eleven patches in this
 folder applied and the Vulkan backend switched on. The binaries in the release (`rexruntime.dll`,
 `rexgpu-xenos.dll`) are built from exactly this.
 
@@ -17,6 +17,7 @@ folder applied and the Vulkan backend switched on. The binaries in the release (
 | 0008 | **Graphics: optional app draw filter** (`rex::graphics::SetDrawRegisterFilter`). Called before each draw; may apply temporary register writes (e.g. a shader constant) for that draw only. | Recolours the title logo while the random mazes option is on. |
 | 0009 | **Runtime: game data can be a package file (STFS).** A file given as the game data root is mounted read-only as an STFS package (LIVE / CON / PIRS). | Run the game straight from the package dumped from the console. |
 | 0010 | **Vulkan: `vertexPipelineStoresAndAtomics` is not required at init.** The device check and the setup check become warnings. Vertex shaders that export memory (memexport) still get rejected at draw time, as before. | Only memexport needs the feature, and the translator already drops it without the feature. Requiring it up front blocked every game on GPUs that lack it (Mali-G925 and others), even when the game never uses memexport. No change on GPUs that have it, so the PC build behaves as before. |
+| 0011 | **UI: X11/Wayland dependencies are not required on Android.** The desktop Linux block in `src/ui` is excluded when `ANDROID` is set. | Android reports `UNIX` and not `APPLE` in CMake, so the block ran `pkg-config` for `x11-xcb` and `wayland-client` and stopped configure. Only needed for the Android build; the PC build is unchanged. |
 
 Patches 0001–0006 are performance work, measured on Windows and on a Steam Deck under Proton; 0007–0009 add
 small, general-purpose extension points. All are self-contained and could be offered upstream.
