@@ -1,0 +1,82 @@
+name: Pac-Man codegen
+
+# Manual only. Checks that ReXGlue codegen runs on the Pac-Man manifest with the game's
+# default.xex, which comes from a PRIVATE repo. Nothing from the game is uploaded:
+# this repo is public, and the generated code is derived from the game.
+#
+# Required repo configuration (Settings > Secrets and variables > Actions):
+#   variable GAME_REPO  = "<owner>/<private-game-repo>"  (must contain default.xex at its root)
+#   secret   GAME_TOKEN = fine-grained token with read access to contents of that repo
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codegen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch game data from the private repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.GAME_REPO }}
+          token: ${{ secrets.GAME_TOKEN }}
+          path: game-private
+          sparse-checkout: default.xex
+          sparse-checkout-cone-mode: false
+
+      - name: Place default.xex where the manifest expects it
+        run: |
+          test -f game-private/default.xex || { echo "default.xex not found in ${GAME_REPO}"; exit 1; }
+          mkdir -p private && cp game-private/default.xex private/default.xex
+          rm -rf game-private
+        env:
+          GAME_REPO: ${{ vars.GAME_REPO }}
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build clang libc++-dev libc++abi-dev libx11-dev libx11-xcb-dev \
+            libxcb1-dev libxcb-randr0-dev libxcb-keysyms1-dev libxcb-icccm4-dev libxcb-xinerama0-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libasound2-dev libpulse-dev
+
+      - name: Fetch ReXGlue SDK and build the host codegen tool
+        run: |
+          bash scripts/fetch_sdk.sh
+          git -C rexglue-sdk-src submodule update --init --recursive --depth 1
+          cmake -S rexglue-sdk-src -B build-host -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_FLAGS=-stdlib=libc++ \
+            -DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ \
+            -DCMAKE_SHARED_LINKER_FLAGS=-stdlib=libc++
+          cmake --build build-host --target rexglue
+
+      - name: Run codegen on the Pac-Man manifest
+        run: |
+          REX="$PWD/rexglue-sdk-src/out/linux-amd64"
+          LIBCXX_DIR="$(dirname "$(find /usr/lib -name libc++.so.1 | head -1)")"
+          cd rexglue
+          LD_LIBRARY_PATH="$REX:$LIBCXX_DIR" "$REX/rexglue" codegen pacman_manifest.toml 2>&1 | tee ../codegen.log
+          echo "generated sources: $(find generated/default -name '*.cpp' | wc -l)"
+
+      - name: Summary (no game data is uploaded)
+        if: always()
+        run: |
+          {
+            echo "## Pac-Man codegen"
+            tail -20 codegen.log 2>/dev/null
+            echo "generated .cpp files: $(find rexglue/generated/default -name '*.cpp' 2>/dev/null | wc -l)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload log only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pacman-codegen-log
+          path: codegen.log
+          if-no-files-found: warn
