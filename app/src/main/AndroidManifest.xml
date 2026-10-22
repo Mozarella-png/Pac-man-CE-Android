@@ -3,6 +3,8 @@
 
     <application
         android:label="Pac-Man CE"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:hasCode="true"
         android:allowBackup="false">
 
