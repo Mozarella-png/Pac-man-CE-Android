@@ -1,0 +1,60 @@
+name: rexglue host build
+
+# Manual only. Builds the ReXGlue codegen tool (target `rexglue`) for the x86_64 host,
+# without the Android toolchain, so it can run on this runner. The binary is uploaded
+# as an artifact; the Pac-Man codegen step uses it.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build libx11-dev libx11-xcb-dev libxcb1-dev \
+            libxcb-randr0-dev libxcb-keysyms1-dev libxcb-icccm4-dev libxcb-xinerama0-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libasound2-dev libpulse-dev
+
+      - name: Fetch ReXGlue SDK, apply patches, init submodules
+        run: |
+          bash scripts/fetch_sdk.sh
+          git -C rexglue-sdk-src submodule update --init --recursive --depth 1 2>&1 | tee submodules.log
+
+      - name: Configure host build
+        run: |
+          cmake -S rexglue-sdk-src -B build-host -G Ninja -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
+
+      - name: Build rexglue codegen tool
+        run: |
+          cmake --build build-host --target rexglue -- -k 0 2>&1 | tee build.log || true
+
+      - name: Locate binary and summarize
+        if: always()
+        run: |
+          BIN="$(find build-host rexglue-sdk-src/out -type f -name rexglue -perm -u+x 2>/dev/null | head -1)"
+          { echo "## Result"; if [ -n "$BIN" ]; then echo "built: $BIN"; file "$BIN"; else echo "no rexglue binary";
+            echo "## Configure errors"; grep -E "CMake Error" configure.log | head -30;
+            echo "## Build errors (first 200)"; grep -E "error:|FAILED:" build.log | head -200; } | tee summary.txt >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$BIN" ]; then mkdir -p host-out && cp "$BIN" host-out/rexglue; fi
+
+      - name: Upload binary (if built)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rexglue-host
+          path: |
+            host-out/rexglue
+            submodules.log
+            configure.log
+            build.log
+            summary.txt
+          if-no-files-found: warn
