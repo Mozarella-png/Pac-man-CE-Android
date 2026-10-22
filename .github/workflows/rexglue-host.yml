@@ -48,7 +48,19 @@ jobs:
           { echo "## Result"; if [ -n "$BIN" ]; then echo "built: $BIN"; file "$BIN"; else echo "no rexglue binary";
             echo "## Configure errors"; grep -E "CMake Error" configure.log | head -30;
             echo "## Build errors (first 200)"; grep -E "error:|FAILED:" build.log | head -200; fi; } | tee summary.txt >> "$GITHUB_STEP_SUMMARY"
-          if [ -n "$BIN" ]; then mkdir -p host-out && cp "$BIN" host-out/rexglue; fi
+          if [ -n "$BIN" ]; then
+            mkdir -p host-out
+            cp "$BIN" host-out/rexglue
+            # Shared libraries from the same build tree, plus the libc++ runtime the binary links.
+            cp "$(dirname "$BIN")"/*.so host-out/ 2>/dev/null || true
+            for l in libc++.so.1 libc++abi.so.1 libunwind.so.1; do
+              f="$(find /usr/lib /usr/lib64 -name "$l" 2>/dev/null | head -1)"
+              [ -n "$f" ] && cp -L "$f" host-out/ || echo "missing $l"
+            done
+            # Smoke test: the tool must start with the bundled libraries.
+            LD_LIBRARY_PATH="$PWD/host-out" ./host-out/rexglue --help > host-out/help.txt 2>&1 || echo "rexglue --help exit code $?" >> host-out/help.txt
+            { echo "## Smoke test (rexglue --help)"; head -20 host-out/help.txt; } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload binary (if built)
         if: always()
@@ -56,7 +68,7 @@ jobs:
         with:
           name: rexglue-host
           path: |
-            host-out/rexglue
+            host-out/**
             submodules.log
             configure.log
             build.log
