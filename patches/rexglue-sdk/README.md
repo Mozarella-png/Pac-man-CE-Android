@@ -1,7 +1,7 @@
 # ReXGlue SDK patches
 
 This port is built against the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) (BSD-3-Clause) at commit
-`bd833a2ab69d305f99ddf57418fc38ffec8af93d` (2026-10-01, the nightly 0.10.0.24), with the thirteen patches in this
+`bd833a2ab69d305f99ddf57418fc38ffec8af93d` (2026-10-01, the nightly 0.10.0.24), with the fifteen patches in this
 folder applied and the Vulkan backend switched on. The binaries in the release (`rexruntime.dll`,
 `rexgpu-xenos.dll`) are built from exactly this.
 
@@ -20,6 +20,8 @@ folder applied and the Vulkan backend switched on. The binaries in the release (
 | 0011 | **UI: X11/Wayland dependencies are not required on Android.** The desktop Linux block in `src/ui` is excluded when `ANDROID` is set. | Android reports `UNIX` and not `APPLE` in CMake, so the block ran `pkg-config` for `x11-xcb` and `wayland-client` and stopped configure. Only needed for the Android build; the PC build is unchanged. |
 | 0012 | **Android: NDK libc++ gaps.** Floating-point `from_chars` through the portable path, `clock_time_conversion` declared on Android, and a `std::jthread`/`stop_token` stand-in (`rex/thread/jthread_compat.h`) used by the timer queue. | The NDK r27 libc++ lacks these. PC builds keep using the standard types. |
 | 0013 | **Android: fibers and platform helpers.** `fiber_android.cpp` (setjmp + stack switch, since Bionic has no `ucontext`), `rex/main_android.h` (API level query), and CMake picks the fiber source per platform. | Bionic removed `getcontext`/`makecontext`/`swapcontext`. The Windows and Linux builds are unchanged. |
+| 0014 | **Android: fiber layout, threading, memory.** `Fiber` gets the setjmp layout for Android (checked before the Linux branch, since `REX_PLATFORM_LINUX` is also true there). Robust mutexes are skipped on Android. `memory_posix.cpp` includes `rex/main_android.h`. | Bionic has no `PTHREAD_MUTEX_ROBUST` or `pthread_mutex_consistent`. PC builds are unchanged. |
+| 0015 | **Android: ANativeWindow surface.** `window_sdl.cpp` creates an `AndroidNativeWindowSurface` from SDL's window pointer and leaves X11/Wayland out on Android. CMake compiles `surface_android.cpp` instead of `surface_gnulinux.cpp`. | SDL provides the ANativeWindow on Android. The desktop surfaces are unchanged. |
 
 Patches 0001–0006 are performance work, measured on Windows and on a Steam Deck under Proton; 0007–0009 add
 small, general-purpose extension points. All are self-contained and could be offered upstream.

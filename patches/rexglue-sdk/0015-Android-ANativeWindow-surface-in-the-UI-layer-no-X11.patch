@@ -1,0 +1,137 @@
+From eecc17116c9a04747161b5c167d8f2c0148012a9 Mon Sep 17 00:00:00 2001
+From: patch <a@b.c>
+Date: Thu, 22 Oct 2026 02:02:28 +0000
+Subject: [PATCH 2/2] Android: ANativeWindow surface in the UI layer, no
+ X11/Wayland
+
+---
+ include/rex/ui/surface_android.h | 45 ++++++++++++++++++++++++++++++++
+ src/ui/CMakeLists.txt            |  3 ++-
+ src/ui/surface_android.cpp       | 11 ++++++++
+ src/ui/window_sdl.cpp            | 12 +++++++++
+ 4 files changed, 70 insertions(+), 1 deletion(-)
+ create mode 100644 include/rex/ui/surface_android.h
+ create mode 100644 src/ui/surface_android.cpp
+
+diff --git a/include/rex/ui/surface_android.h b/include/rex/ui/surface_android.h
+new file mode 100644
+index 0000000..b4b5d1b
+--- /dev/null
++++ b/include/rex/ui/surface_android.h
+@@ -0,0 +1,45 @@
++#pragma once
++/**
++ * @file        rex/ui/surface_android.h
++ * @brief       Android ANativeWindow surface for Vulkan presentation.
++ */
++
++#include <rex/ui/surface.h>
++
++#include <android/native_window.h>
++
++namespace rex {
++namespace ui {
++
++class AndroidNativeWindowSurface final : public Surface {
++ public:
++  // Holds its own reference: SDL releases the ANativeWindow as soon as the
++  // Java surface is destroyed (screen off, home), while the presenter may
++  // still be using this surface. A dangling pointer here faulted inside
++  // RefBase::incStrong, which the guest-memory SIGSEGV handler then retried
++  // forever (black screen after unlocking).
++  explicit AndroidNativeWindowSurface(ANativeWindow* window) : window_(window) {
++    if (window_) ANativeWindow_acquire(window_);
++  }
++  ~AndroidNativeWindowSurface() override {
++    if (window_) ANativeWindow_release(window_);
++  }
++  AndroidNativeWindowSurface(const AndroidNativeWindowSurface&) = delete;
++  AndroidNativeWindowSurface& operator=(const AndroidNativeWindowSurface&) = delete;
++  TypeIndex GetType() const override { return kTypeIndex_AndroidNativeWindow; }
++  ANativeWindow* window() const { return window_; }
++
++ protected:
++  bool GetSizeImpl(uint32_t& width_out, uint32_t& height_out) const override {
++    if (!window_) return false;
++    width_out = static_cast<uint32_t>(ANativeWindow_getWidth(window_));
++    height_out = static_cast<uint32_t>(ANativeWindow_getHeight(window_));
++    return true;
++  }
++
++ private:
++  ANativeWindow* window_;
++};
++
++}  // namespace ui
++}  // namespace rex
+diff --git a/src/ui/CMakeLists.txt b/src/ui/CMakeLists.txt
+index f959ad4..e2cccbd 100644
+--- a/src/ui/CMakeLists.txt
++++ b/src/ui/CMakeLists.txt
+@@ -74,7 +74,8 @@ elseif(APPLE)
+     )
+ else()
+     set(REXUI_PLATFORM_SOURCES
+-        surface_gnulinux.cpp
++        $<$<NOT:$<BOOL:${ANDROID}>>:surface_gnulinux.cpp>
++        $<$<BOOL:${ANDROID}>:surface_android.cpp>
+     )
+ endif()
+ 
+diff --git a/src/ui/surface_android.cpp b/src/ui/surface_android.cpp
+new file mode 100644
+index 0000000..43d6da9
+--- /dev/null
++++ b/src/ui/surface_android.cpp
+@@ -0,0 +1,11 @@
++// Android surface stub — LibertyRecomp uses SDL for windowing on Android.
++// This provides the minimal Surface implementation required by rexui.
++
++#include <rex/ui/window.h>
++
++namespace rex::ui {
++
++// Android does not use XCB/X11/GTK surfaces — Vulkan surfaces are created
++// by SDL via ANativeWindow. No surface helper is needed.
++
++}  // namespace rex::ui
+diff --git a/src/ui/window_sdl.cpp b/src/ui/window_sdl.cpp
+index 6782cce..b816e9b 100644
+--- a/src/ui/window_sdl.cpp
++++ b/src/ui/window_sdl.cpp
+@@ -34,6 +34,8 @@
+ #include <SDL3/SDL_metal.h>
+ 
+ #include <rex/ui/surface_mac.h>
++#elif REX_PLATFORM_ANDROID
++#include <rex/ui/surface_android.h>
+ #else
+ #include <X11/Xlib-xcb.h>
+ #include <rex/ui/surface_gnulinux.h>
+@@ -447,6 +449,15 @@ std::unique_ptr<Surface> WindowSDL::CreateSurfaceImpl(Surface::TypeFlags allowed
+       SDL_Metal_DestroyView(metal_view);
+     }
+   }
++#else
++#if REX_PLATFORM_ANDROID
++  if (allowed_types & Surface::kTypeFlag_AndroidNativeWindow) {
++    auto* native = static_cast<ANativeWindow*>(SDL_GetPointerProperty(
++        SDL_GetWindowProperties(sdl_window_), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr));
++    if (native) {
++      return std::make_unique<AndroidNativeWindowSurface>(native);
++    }
++  }
+ #else
+   SDL_PropertiesID props = SDL_GetWindowProperties(sdl_window_);
+   if (allowed_types & Surface::kTypeFlag_WaylandSurface) {
+@@ -467,6 +478,7 @@ std::unique_ptr<Surface> WindowSDL::CreateSurfaceImpl(Surface::TypeFlags allowed
+       return std::make_unique<XcbWindowSurface>(XGetXCBConnection(display), x11_window);
+     }
+   }
++#endif  // REX_PLATFORM_ANDROID
+ #endif
+   return nullptr;
+ }
+-- 
+2.43.0
+
