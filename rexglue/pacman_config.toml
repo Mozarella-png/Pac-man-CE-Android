@@ -1,0 +1,342 @@
+# Pac-Man CE codegen config for ReXGlue (included from pacman_manifest.toml).
+# Carried over from the XenonRecomp config (config\pacman.toml); see CLAUDE.md for how each was found.
+# Save/restore helpers are detected by ReXGlue itself.
+
+# MSVC CRT setjmp / longjmp. The SEH hook setjmp checks (0x821F6330) is never set, so the plain path is used.
+setjmp_address = 0x8215BDB0
+longjmp_address = 0x8215BC90
+
+# Native C runtime routines ([rexcrt] memcpy = 0x820B9150 / memset = 0x820B86C0, identified 2026-10-21) were
+# tried and measured: no difference in the gameplay demo (A/B, --pacman_autodemo_seconds), so they stay recompiled.
+
+# Functions containing jump tables that analysis ended too early.
+[functions]
+0x82196C68 = { size = 0x188 } # switch at 82196C84 - leaf fn, checked
+0x8219C030 = { size = 0x194 } # switch at 8219C03C - start corrected by hand
+0x8219D878 = { size = 0x94 }  # switch at 8219D898 - leaf fn, checked
+0x820AB008 = { size = 0x124 } # switch at 820AB01C - between .pdata fns 820AAF70 and 820AB130
+0x820EE348 = { size = 0x150 } # switch at 820EE3CC - after padding at 820EE344, runs to .pdata fn 820EE498
+# Leaf function reached only by a this-adjusting thunk (b from 8208972C); ReXGlue's analysis missed it.
+0x8208A000 = { size = 0x28 }
+
+# Spin-wait backoff (src/spin_hooks.cpp). On the Xbox these loops each had a hardware thread to
+# themselves; on a PC they each pin a core. The hooks only add a pause / short sleep while idle.
+
+# Job workers 1-3 (sub_8213ED08 / sub_8213EDE0 / sub_8213EEB8) poll their control word for state 1
+# (job handed out) with no delay. Hooked at the "bne" taken when there is no job; r11 = state.
+[[midasm_hook]]
+address = 0x8213ED54
+name = "WorkerPollHook"
+registers = ["r11"]
+
+[[midasm_hook]]
+address = 0x8213EE2C
+name = "WorkerPollHook"
+registers = ["r11"]
+
+[[midasm_hook]]
+address = 0x8213EF04
+name = "WorkerPollHook"
+registers = ["r11"]
+
+# D3D's GPU wait poll (sub_82065018, called in a loop by sub_8206F728): a few delay hints, then a check of
+# the GPU's progress. Hooked after the delay loop, once per poll.
+[[midasm_hook]]
+address = 0x8206506C
+name = "GpuWaitPollHook"
+registers = ["r1"]
+
+# Per-frame CPU/GPU handshake (src/spin_hooks.cpp). D3D's swap code (sub_82067570) emits two PM4
+# WAIT_REG_MEM packets that wait for a memory word set by the CPU side, with wait = 0x100. ReXGlue's command
+# processor sleeps wait/0x100 ms per failed check (Windows Sleep(1), often longer), enough to miss a vblank
+# with every thread idle. Hooked on the stores of the wait field; r4 / r6 = wait.
+[[midasm_hook]]
+address = 0x82067620
+name = "GpuHandshakeWaitHook"
+registers = ["r4"]
+
+[[midasm_hook]]
+address = 0x820676F0
+name = "GpuHandshakeWaitHook"
+registers = ["r6"]
+
+# Not hooked: the swap path's flip wait (sub_82067838, conditional on r24 & 4) - WAIT_REG_MEM on GPU register
+# 0x1973 bit 0, wait = 0x100 in r15, stored at 0x8206792C. Giving it wait 0xFF made play worse (2026-10-20):
+# below 0x100 the command processor skips PrepareForWait(), which submits queued work to the host GPU.
+# The other WAIT_REG_MEM builders (sub_8206F3A8, sub_8207A500, sub_8207BA40, sub_8207D7C0) use wait = 8.
+
+# D3D command buffer size (src/spin_hooks.cpp). D3D's ring-buffer setup (sub_82070038) reads
+# D3DRING_BUFFER_PARAMETERS: +12 secondary (command buffer) size, default 2 MB; +20 segment count, default 32
+# (64 KB segments). In heavy scenes a frame's commands overflow the free part of 2 MB while the GPU is still
+# parked on the previous frame's flip, so the CPU stalls mid-frame in sub_8206EAD8 waiting for the GPU's
+# read position (status block +4) and misses the next vblank. Hooked just after the size default
+# (r25 = size, r11 = segment count) to enlarge the buffer, keeping 64 KB segments.
+[[midasm_hook]]
+address = 0x8207013C
+name = "CommandBufferSizeHook"
+registers = ["r25", "r11"]
+
+# D3D wait timing (src/frame_stats.cpp): the slow paths of the two waits a frame can stall in.
+# Command buffer full - sub_8206EAD8 waits for the GPU's read position to pass the space being reused.
+[[midasm_hook]]
+address = 0x8206EB18
+name = "BufferWaitBeginHook"
+
+[[midasm_hook]]
+address = 0x8206EB60
+name = "BufferWaitEndHook"
+
+# Fence wait - sub_8206F728 waits for the GPU to reach a fence (e.g. the frame-throttling fence at
+# device+14788 when a new command segment starts).
+[[midasm_hook]]
+address = 0x8206F79C
+name = "FenceWaitBeginHook"
+
+[[midasm_hook]]
+address = 0x8206F7DC
+name = "FenceWaitEndHook"
+
+# Vblank-interrupt timing (src/frame_stats.cpp): entry of the game's graphics interrupt callback
+# sub_8206ED50; r3 = source (0 = vblank, which is also when the game flips the front buffer).
+[[midasm_hook]]
+address = 0x8206ED50
+name = "InterruptHook"
+registers = ["r3"]
+
+# Draw counter (src/frame_stats.cpp): entry of sub_820CB840, the draw the sprite routines end with
+# (sub_8213AB98 / sub_8213AD30 call it as (device, 6, 0, 4): one 4-vertex quad per call).
+[[midasm_hook]]
+address = 0x820CB840
+name = "DrawHook"
+
+# Frame-time monitor (src/frame_stats.cpp): the game's only VdSwap call (bl 0x821BAD0C), once per frame.
+[[midasm_hook]]
+address = 0x82067C64
+name = "FrameHook"
+
+# Playfield position (src/playfield.cpp): just after the startup camera's projection matrix is built
+# (sub_820607E0, bl sub_8207FCD8 -> 0x821E5950).
+[[midasm_hook]]
+address = 0x820608EC
+name = "ProjectionHook"
+
+# ... and just after sub_8213B1C0 stores the sprite matrix (0x821EDC30, vertex constants c0-c3).
+[[midasm_hook]]
+address = 0x8213B2AC
+name = "SpriteMatrixHook"
+
+# Deferred resource destruction (src/texture_release.cpp): in D3D's Release (sub_8207DB78), where the count has
+# reached 0 and r31 is about to be destroyed (sub_8207D5D8, which first waits for the GPU - parked until the next
+# vblank if the resource was drawn in the frame just submitted: a one-frame stall). The hook queues the resource
+# and skips to the epilogue (the skipped li r3,0 is done by the hook).
+[[midasm_hook]]
+address = 0x8207DBD8
+name = "DeferDestroyHook"
+registers = ["r3", "r31"]
+jump_address_on_true = 0x8207DBE4
+
+# Frame trace: the game's job dispatcher sub_8213ECA8 after handing out jobs (it then spins until the 3 workers'
+# control words leave state 1) and after the spin.
+[[midasm_hook]]
+address = 0x8213ECC4
+name = "JobsStartHook"
+
+[[midasm_hook]]
+address = 0x8213ECF4
+name = "JobsDoneHook"
+
+# Auto-demo for measurements (src/autodemo.cpp, --pacman_autodemo_seconds): after the game's controller poll
+# (bl XInputGetState sub_820C9810; r28 = user, state at r1+0x50, r3 = result).
+[[midasm_hook]]
+address = 0x820A5D2C
+name = "AutoDemoInputHook"
+registers = ["r1", "r3", "r28"]
+
+# ... and the menus' keystroke reads: return of XamInputGetKeystrokeEx in the wrapper sub_820C9820 (r3 = result,
+# r5 = the game's XINPUT_KEYSTROKE).
+[[midasm_hook]]
+address = 0x820C984C
+name = "AutoDemoKeystrokeHook"
+registers = ["r3", "r5"]
+
+# Frame trace (src/frame_stats.cpp, --pacman_frame_trace): each call of the fence wait sub_8206F728, so the trace
+# shows which caller waits. Hooked on the bl instructions.
+[[midasm_hook]]
+address = 0x82067F30
+name = "FenceCallHook_82067F30"
+
+[[midasm_hook]]
+address = 0x8206FBBC
+name = "FenceCallHook_8206FBBC"
+
+[[midasm_hook]]
+address = 0x8206FE14
+name = "FenceCallHook_8206FE14"
+
+[[midasm_hook]]
+address = 0x82070010
+name = "FenceCallHook_82070010"
+
+[[midasm_hook]]
+address = 0x8207D690
+name = "FenceCallHook_8207D690"
+registers = ["r1", "r31"]
+
+[[midasm_hook]]
+address = 0x8207D6DC
+name = "FenceCallHook_8207D6DC"
+
+[[midasm_hook]]
+address = 0x8207D70C
+name = "FenceCallHook_8207D70C"
+
+[[midasm_hook]]
+address = 0x8207D738
+name = "FenceCallHook_8207D738"
+
+[[midasm_hook]]
+address = 0x8207D79C
+name = "FenceCallHook_8207D79C"
+
+[[midasm_hook]]
+address = 0x8207D84C
+name = "FenceCallHook_8207D84C"
+
+# Diagnostics (src/diagnostics.cpp): every call the game makes to a function that stops it or its thread is
+# logged with its arguments (the SDK logs these at debug level at most). Hooked on the bl instructions.
+[[midasm_hook]]
+address = 0x82062B7C
+name = "StopHook_82062B7C"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheckEx
+
+[[midasm_hook]]
+address = 0x820638FC
+name = "StopHook_820638FC"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheckEx
+
+[[midasm_hook]]
+address = 0x820641E4
+name = "StopHook_820641E4"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheckEx
+
+[[midasm_hook]]
+address = 0x820644D4
+name = "StopHook_820644D4"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheckEx
+
+[[midasm_hook]]
+address = 0x820B8AB4
+name = "StopHook_820B8AB4"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheck
+
+[[midasm_hook]]
+address = 0x820B8B5C
+name = "StopHook_820B8B5C"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheck
+
+[[midasm_hook]]
+address = 0x820BC830
+name = "StopHook_820BC830"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheck
+
+[[midasm_hook]]
+address = 0x820BC998
+name = "StopHook_820BC998"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheck
+
+[[midasm_hook]]
+address = 0x8215C7AC
+name = "StopHook_8215C7AC"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheck
+
+[[midasm_hook]]
+address = 0x821BB218
+name = "StopHook_821BB218"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# KeBugCheck
+
+[[midasm_hook]]
+address = 0x82061400
+name = "StopHook_82061400"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# XamLoaderTerminateTitle
+
+[[midasm_hook]]
+address = 0x82061574
+name = "StopHook_82061574"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# XamLoaderTerminateTitle
+
+[[midasm_hook]]
+address = 0x820CAD08
+name = "StopHook_820CAD08"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# ExTerminateThread
+
+[[midasm_hook]]
+address = 0x820640E4
+name = "StopHook_820640E4"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# RtlRaiseException
+
+[[midasm_hook]]
+address = 0x82064C4C
+name = "StopHook_82064C4C"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# RtlRaiseException
+
+[[midasm_hook]]
+address = 0x820CA48C
+name = "StopHook_820CA48C"
+registers = ["r3", "r4", "r5", "r6", "r7"]
+# RtlRaiseException
+
+# Padding words to skip rather than treat as code.
+[[invalid_instructions]]
+data = 0x00000000
+size = 4
+
+# Random maze order at run time (src/random_mazes.cpp): the stage lookups sub_8213E948 (maze file name of stage N
+# in a section) and sub_82140210 (its number) both reduce the index modulo the section's child count; hooked on
+# that divwu to remap the index (r3 = section, count in r10 / r11, index in r31 / r30).
+[[midasm_hook]]
+address = 0x8213E974
+name = "StageNameIndexHook"
+registers = ["r3", "r10", "r31"]
+
+[[midasm_hook]]
+address = 0x82140240
+name = "StageValueIndexHook"
+registers = ["r3", "r11", "r30"]
+
+# ... and the run start in sub_8213F438, where the three stage counters are reset (both branches): new order.
+[[midasm_hook]]
+address = 0x8213F498
+name = "StageRunStartHook"
+
+[[midasm_hook]]
+address = 0x8213F504
+name = "StageRunStartHook"
+
+# ... and no high scores in random runs: entry of sub_820A8CE8(r3 = the game's save data, r4 = size), which copies
+# it into the live save buffer and saves; skipped (returns) while a random run is going.
+[[midasm_hook]]
+address = 0x820A8CE8
+name = "SaveCommitHook"
+registers = ["r3", "r4"]
+return_on_true = true
+
+# The title menu's Achievements item: entry of sub_820C9CC0 (li r4,0; b XamShowAchievementsUI, a stub in the SDK).
+# AchievementsUiHook (main.cpp) opens the SDK's achievements overlay instead.
+[[midasm_hook]]
+address = 0x820C9CC0
+name = "AchievementsUiHook"
