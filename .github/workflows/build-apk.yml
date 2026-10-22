@@ -20,12 +20,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install NDK and CMake
+        # The ubuntu-24.04 image ships the Android SDK; android-actions/setup-android@v3
+        # fails on it ("Failed to find package 'tools'"), so we call sdkmanager directly.
         run: |
-          yes | sdkmanager --licenses >/dev/null
-          sdkmanager --install "ndk;27.2.12479018" "cmake;3.22.1"
+          SDKMANAGER="$(command -v sdkmanager || ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)"
+          echo "using $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" --install "ndk;27.2.12479018" "cmake;3.22.1"
 
       - name: Fetch ReXGlue SDK and apply patches
         run: bash scripts/fetch_sdk.sh
