@@ -1,7 +1,7 @@
 pluginManagement {
     repositories { google(); mavenCentral(); gradlePluginPortal() }
 }
-dependencyResolution {
+dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "Pac-Man-CE-Android"
