@@ -1,0 +1,46 @@
+From 10f5e40380f990331ae8cde5829b36100def717c Mon Sep 17 00:00:00 2001
+From: patch <a@b.c>
+Date: Thu, 22 Oct 2026 02:21:37 +0000
+Subject: [PATCH] Android: stub for content:// URIs (not used by the game data
+ path yet)
+
+---
+ src/core/filesystem_posix.cpp | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/src/core/filesystem_posix.cpp b/src/core/filesystem_posix.cpp
+index ef5bdf4..3e6ee8d 100644
+--- a/src/core/filesystem_posix.cpp
++++ b/src/core/filesystem_posix.cpp
+@@ -26,6 +26,11 @@
+ 
+ #include <rex/assert.h>
+ #include <rex/filesystem.h>
++
++#if defined(__ANDROID__)
++#include <cerrno>
++#include <rex/logging.h>
++#endif
+ #include <rex/logging.h>
+ #include <rex/platform/env.h>
+ #include <rex/string.h>
+@@ -304,3 +309,16 @@ std::vector<FileInfo> ListFiles(const std::filesystem::path& path) {
+ 
+ }  // namespace filesystem
+ }  // namespace rex
++
++#if defined(__ANDROID__)
++// content:// URIs need the Android ContentResolver (JNI). Not implemented yet: the game
++// data is read from plain files in app storage, so this path is not reached.
++namespace rex::filesystem {
++int OpenAndroidContentFileDescriptor(const std::string_view uri, const char* mode) {
++  (void)mode;
++  REXLOG_WARN("content:// URIs are not supported on Android yet: {}", uri);
++  errno = ENOSYS;
++  return -1;
++}
++}  // namespace rex::filesystem
++#endif
+-- 
+2.43.0
+
