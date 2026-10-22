@@ -1,0 +1,26 @@
+From e4991e33d740e0fffbda4634cfabb460a6b52115 Mon Sep 17 00:00:00 2001
+From: patch <a@b.c>
+Date: Thu, 22 Oct 2026 02:13:20 +0000
+Subject: [PATCH] Android: no separate pthread/rt/dl libraries (Bionic has them
+ in libc)
+
+---
+ src/core/CMakeLists.txt | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index c02805a..1b2367e 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -101,6 +101,8 @@ target_include_directories(rexcore PRIVATE
+ 
+ if(APPLE)
+     target_link_libraries(rexcore PRIVATE pthread)
++elseif(ANDROID)
++    # Bionic provides pthread, rt and dl inside libc: there are no separate libraries.
+ elseif(UNIX)
+     target_link_libraries(rexcore PRIVATE pthread rt dl)
+ endif()
+-- 
+2.43.0
+

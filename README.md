@@ -9,9 +9,9 @@ Base: el port de PC Pacman-CE-PC-Recomp y el SDK
 ## Estado
 
 - [x] Estructura Gradle/CMake de la app "Pac-Man CE" (minSdk 29, arm64-v8a).
-- [x] Script `scripts/fetch_sdk.sh`: clona el SDK en el commit fijado y aplica los 15 parches.
+- [x] Script `scripts/fetch_sdk.sh`: clona el SDK en el commit fijado y aplica los 16 parches.
 - [x] Workflow `.github/workflows/build-apk.yml` (Ubuntu, NDK 27.2, Gradle 8.10.2).
-- [~] Capa de plataforma Android del SDK (en curso). Probe 1: configure falló por X11/Wayland (0011). Probe 2: configure OK; el build falló en libc++ del NDK y en fibers (0012 y 0013 atienden eso). Probe 3: errores de fibers, mutex robusto e UI (0014 y 0015 los atienden). Probe 4 pendiente. Primer paso: workflow manual `sdk-android-probe.yml`, que configura y compila el SDK fijado para arm64 y guarda el log de errores, para trabajar con errores reales del compilador. Sin esto no hay juego: archivos de ventana, superficie,
+- [~] Capa de plataforma Android del SDK (en curso). Probe 1: configure falló por X11/Wayland (0011). Probe 2: configure OK; el build falló en libc++ del NDK y en fibers (0012 y 0013 atienden eso). Probe 3: errores de fibers, mutex robusto e UI (0014 y 0015 los atienden). Probe 4: el build compila todo; solo fallaba el enlazado por -lpthread y -lrt (0016). Probe 5 pendiente. Primer paso: workflow manual `sdk-android-probe.yml`, que configura y compila el SDK fijado para arm64 y guarda el log de errores, para trabajar con errores reales del compilador. Sin esto no hay juego: archivos de ventana, superficie,
       input, fibers, memoria y filesystem para Android. El SDK fijado no los trae; se portarán desde
       la copia del SDK del fork Liberty Recompiled (licencia BSD-3, se conserva el aviso).
 - [ ] Puerto de la app del PC (`pacman_app.h`, `main.cpp`, etc.), que hoy usa `windows.h`.
