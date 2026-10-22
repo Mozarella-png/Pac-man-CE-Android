@@ -21,6 +21,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check the token can read the game repo
+        env:
+          GAME_REPO: ${{ vars.GAME_REPO }}
+          GAME_TOKEN: ${{ secrets.GAME_TOKEN }}
+        run: |
+          if [ -z "$GAME_TOKEN" ]; then echo "GAME_TOKEN secret is empty or missing"; exit 1; fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GAME_TOKEN" \
+            -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GAME_REPO")
+          echo "GET /repos/$GAME_REPO -> HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "Token cannot read $GAME_REPO. Check the token owner, its repo selection, and Contents read permission."
+            exit 1
+          fi
+
       - name: Fetch game data from the private repo
         uses: actions/checkout@v4
         with:
