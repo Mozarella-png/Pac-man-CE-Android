@@ -9,7 +9,7 @@ Base: el port de PC Pacman-CE-PC-Recomp y el SDK
 ## Estado
 
 - [x] Estructura Gradle/CMake de la app "Pac-Man CE" (minSdk 29, arm64-v8a).
-- [x] Script `scripts/fetch_sdk.sh`: clona el SDK en el commit fijado y aplica los 17 parches.
+- [x] Script `scripts/fetch_sdk.sh`: clona el SDK en el commit fijado y aplica los 18 parches.
 - [x] Workflow `.github/workflows/build-apk.yml` (Ubuntu, NDK 27.2, Gradle 8.10.2).
 - [~] Capa de plataforma Android del SDK (en curso). Probe 1: configure falló por X11/Wayland (0011). Probe 2: configure OK; el build falló en libc++ del NDK y en fibers (0012 y 0013 atienden eso). Probe 3: errores de fibers, mutex robusto e UI (0014 y 0015 los atienden). Probe 4: el build compila todo; solo fallaba el enlazado por -lpthread y -lrt (0016). Probe 5: solo faltaba el símbolo de content:// URIs (0017, stub). Probe 6: el SDK compila y enlaza para arm64 (librexruntime.so y librexgpu-xenos.so, sin errores). Pendiente: el binario rexglue (codegen) se enlazó para Android y no sirve en el runner x86_64; hace falta un build de host. Primer paso: workflow manual `sdk-android-probe.yml`, que configura y compila el SDK fijado para arm64 y guarda el log de errores, para trabajar con errores reales del compilador. Sin esto no hay juego: archivos de ventana, superficie,
       input, fibers, memoria y filesystem para Android. El SDK fijado no los trae; se portarán desde

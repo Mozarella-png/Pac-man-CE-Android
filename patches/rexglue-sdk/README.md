@@ -1,7 +1,7 @@
 # ReXGlue SDK patches
 
 This port is built against the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) (BSD-3-Clause) at commit
-`bd833a2ab69d305f99ddf57418fc38ffec8af93d` (2026-10-01, the nightly 0.10.0.24), with the seventeen patches in this
+`bd833a2ab69d305f99ddf57418fc38ffec8af93d` (2026-10-01, the nightly 0.10.0.24), with the eighteen patches in this
 folder applied and the Vulkan backend switched on. The binaries in the release (`rexruntime.dll`,
 `rexgpu-xenos.dll`) are built from exactly this.
 
@@ -24,6 +24,7 @@ folder applied and the Vulkan backend switched on. The binaries in the release (
 | 0015 | **Android: ANativeWindow surface.** `window_sdl.cpp` creates an `AndroidNativeWindowSurface` from SDL's window pointer and leaves X11/Wayland out on Android. CMake compiles `surface_android.cpp` instead of `surface_gnulinux.cpp`. | SDL provides the ANativeWindow on Android. The desktop surfaces are unchanged. |
 | 0016 | **Android: no separate pthread/rt/dl libraries.** `src/core/CMakeLists.txt` does not link them on Android. | Bionic has them inside libc; `-lpthread` and `-lrt` do not exist in the NDK. |
 | 0017 | **Android: content:// URIs stub.** `OpenAndroidContentFileDescriptor` returns `ENOSYS` and logs a warning. | Declared by the filesystem API and used by the mapped-memory code, but its JNI implementation (ContentResolver) is not ported. The game data path uses plain files, so it is not reached yet. |
+| 0018 | **libc++ hosts: float `from_chars` and `clock_cast` fallbacks.** The 0012 guards also apply when `_LIBCPP_VERSION` is set, so the Linux host build (libc++ 18) gets the same fallbacks as Android. | libc++ 18 on Linux lacks floating-point `from_chars` and `clock_time_conversion`/`clock_cast`. PC builds with libstdc++ or MSVC are unchanged. |
 
 Patches 0001–0006 are performance work, measured on Windows and on a Steam Deck under Proton; 0007–0009 add
 small, general-purpose extension points. All are self-contained and could be offered upstream.
