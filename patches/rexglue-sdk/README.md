@@ -1,7 +1,7 @@
 # ReXGlue SDK patches
 
 This port is built against the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) (BSD-3-Clause) at commit
-`bd833a2ab69d305f99ddf57418fc38ffec8af93d` (2026-10-01, the nightly 0.10.0.24), with the eleven patches in this
+`bd833a2ab69d305f99ddf57418fc38ffec8af93d` (2026-10-01, the nightly 0.10.0.24), with the thirteen patches in this
 folder applied and the Vulkan backend switched on. The binaries in the release (`rexruntime.dll`,
 `rexgpu-xenos.dll`) are built from exactly this.
 
@@ -18,6 +18,8 @@ folder applied and the Vulkan backend switched on. The binaries in the release (
 | 0009 | **Runtime: game data can be a package file (STFS).** A file given as the game data root is mounted read-only as an STFS package (LIVE / CON / PIRS). | Run the game straight from the package dumped from the console. |
 | 0010 | **Vulkan: `vertexPipelineStoresAndAtomics` is not required at init.** The device check and the setup check become warnings. Vertex shaders that export memory (memexport) still get rejected at draw time, as before. | Only memexport needs the feature, and the translator already drops it without the feature. Requiring it up front blocked every game on GPUs that lack it (Mali-G925 and others), even when the game never uses memexport. No change on GPUs that have it, so the PC build behaves as before. |
 | 0011 | **UI: X11/Wayland dependencies are not required on Android.** The desktop Linux block in `src/ui` is excluded when `ANDROID` is set. | Android reports `UNIX` and not `APPLE` in CMake, so the block ran `pkg-config` for `x11-xcb` and `wayland-client` and stopped configure. Only needed for the Android build; the PC build is unchanged. |
+| 0012 | **Android: NDK libc++ gaps.** Floating-point `from_chars` through the portable path, `clock_time_conversion` declared on Android, and a `std::jthread`/`stop_token` stand-in (`rex/thread/jthread_compat.h`) used by the timer queue. | The NDK r27 libc++ lacks these. PC builds keep using the standard types. |
+| 0013 | **Android: fibers and platform helpers.** `fiber_android.cpp` (setjmp + stack switch, since Bionic has no `ucontext`), `rex/main_android.h` (API level query), and CMake picks the fiber source per platform. | Bionic removed `getcontext`/`makecontext`/`swapcontext`. The Windows and Linux builds are unchanged. |
 
 Patches 0001–0006 are performance work, measured on Windows and on a Steam Deck under Proton; 0007–0009 add
 small, general-purpose extension points. All are self-contained and could be offered upstream.

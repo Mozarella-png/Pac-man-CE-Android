@@ -1,0 +1,192 @@
+From 54e700e3d771928ded627c3e6fd4add3652b90cd Mon Sep 17 00:00:00 2001
+From: patch <a@b.c>
+Date: Thu, 22 Oct 2026 00:46:39 +0000
+Subject: [PATCH 2/2] Android: fibers via setjmp, main_android.h, CMake source
+ selection
+
+---
+ include/rex/main_android.h |  33 +++++++++++
+ src/core/CMakeLists.txt    |   3 +-
+ src/core/fiber_android.cpp | 116 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 151 insertions(+), 1 deletion(-)
+ create mode 100644 include/rex/main_android.h
+ create mode 100644 src/core/fiber_android.cpp
+
+diff --git a/include/rex/main_android.h b/include/rex/main_android.h
+new file mode 100644
+index 0000000..33cab28
+--- /dev/null
++++ b/include/rex/main_android.h
+@@ -0,0 +1,33 @@
++/**
++ * @file        rex/main_android.h
++ * @brief       Minimal Android platform helpers for the ReXGlue runtime.
++ *
++ * Provides the API-level query and JNI lifecycle hooks referenced by the
++ * POSIX/platform threading and memory backends when compiled for Android.
++ */
++
++#ifndef REX_MAIN_ANDROID_H_
++#define REX_MAIN_ANDROID_H_
++
++#include <cstdint>
++
++#if defined(__ANDROID__)
++#include <android/api-level.h>
++#endif
++
++namespace rex {
++
++/// Returns the runtime Android API level (e.g. 26 for Android 8.0).
++/// On non-Android platforms this returns 0, so callers can keep a single
++/// code-path: `if (rex::GetAndroidApiLevel() >= 26) { ... }`.
++inline int32_t GetAndroidApiLevel() {
++#if defined(__ANDROID__)
++  return android_get_device_api_level();
++#else
++  return 0;
++#endif
++}
++
++}  // namespace rex
++
++#endif  // REX_MAIN_ANDROID_H_
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index 1ddafd0..c02805a 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -63,7 +63,8 @@ elseif(UNIX)
+         dynlib_posix.cpp
+         exception_handler_posix.cpp
+         filesystem_posix.cpp
+-        fiber_posix.cpp
++        $<$<NOT:$<BOOL:${ANDROID}>>:fiber_posix.cpp>
++        $<$<BOOL:${ANDROID}>:fiber_android.cpp>
+         mapped_memory_posix.cpp
+         math_gcc.cpp
+         memory_posix.cpp
+diff --git a/src/core/fiber_android.cpp b/src/core/fiber_android.cpp
+new file mode 100644
+index 0000000..31a3322
+--- /dev/null
++++ b/src/core/fiber_android.cpp
+@@ -0,0 +1,116 @@
++/**
++ * @file        core/fiber_android.cpp
++ * @brief       Android (Bionic) backend for rex::thread::Fiber
++ *
++ * Bionic removed ucontext/makecontext/swapcontext. We use the same
++ * setjmp/longjmp + aarch64 stack pivot pattern as the Switch backend.
++ *
++ * @copyright   Copyright (c) 2026 Tom Clay <tomc@tctechstuff.com>
++ *              All rights reserved.
++ *
++ * @license     BSD 3-Clause License
++ */
++
++#include <rex/platform.h>
++#if REX_PLATFORM_ANDROID
++
++#include <rex/thread/fiber.h>
++
++#include <cassert>
++#include <csetjmp>
++#include <cstdlib>
++#include <cstring>
++
++static_assert(sizeof(jmp_buf) <= 256, "jmp_buf exceeds Fiber::jmpbuf_ storage");
++
++namespace rex::thread {
++
++thread_local Fiber* Fiber::tls_current_ = nullptr;
++
++#define FIBER_JMP_BUF(f) (*reinterpret_cast<jmp_buf*>((f)->jmpbuf_))
++
++Fiber* Fiber::ConvertCurrentThread() {
++  auto* f = new Fiber();
++  std::memset(f->jmpbuf_, 0, sizeof(f->jmpbuf_));
++  f->is_thread_fiber_ = true;
++  f->started_ = true;
++  tls_current_ = f;
++  return f;
++}
++
++Fiber* Fiber::Create(size_t stack_size, void (*entry)(void*), void* arg) {
++  if (stack_size < 65536) stack_size = 65536;
++
++  void* stack = nullptr;
++  if (posix_memalign(&stack, 16, stack_size) != 0) stack = nullptr;
++  if (!stack) return nullptr;
++
++  auto* f = new Fiber();
++  std::memset(f->jmpbuf_, 0, sizeof(f->jmpbuf_));
++  f->stack_ = stack;
++  f->stack_size_ = stack_size;
++  f->entry_ = entry;
++  f->arg_ = arg;
++  f->started_ = false;
++  return f;
++}
++
++__attribute__((noinline, noreturn))
++/*static*/ void Fiber::Trampoline() {
++  Fiber* f = tls_current_;
++  f->entry_(f->arg_);
++  __builtin_trap();
++}
++
++void Fiber::SwitchTo(Fiber* target) {
++  Fiber* from = tls_current_;
++  assert(from && "SwitchTo called without ConvertCurrentThread");
++  assert(target && "SwitchTo target is null");
++
++  tls_current_ = target;
++
++  if (setjmp(FIBER_JMP_BUF(from)) == 0) {
++    if (target->started_) {
++      longjmp(FIBER_JMP_BUF(target), 1);
++    } else {
++      target->started_ = true;
++      uintptr_t sp =
++          (reinterpret_cast<uintptr_t>(target->stack_) + target->stack_size_) & ~uintptr_t(15);
++      void (*trampoline)() = &Fiber::Trampoline;
++#if defined(__aarch64__)
++      __asm__ volatile(
++          "mov sp, %[newsp]\n\t"
++          "br  %[func]\n\t"
++          :
++          : [newsp] "r"(sp), [func] "r"(trampoline)
++          : "memory");
++#elif defined(__x86_64__)
++      __asm__ volatile(
++          "mov %[newsp], %%rsp\n\t"
++          "xor %%rbp, %%rbp\n\t"
++          "call *%[func]\n\t"
++          "ud2\n\t"
++          :
++          : [newsp] "r"(sp), [func] "a"(trampoline)
++          : "memory");
++#else
++#error Unsupported Android fiber architecture
++#endif
++      __builtin_unreachable();
++    }
++  }
++}
++
++void Fiber::Destroy() {
++  if (is_thread_fiber_) {
++    tls_current_ = nullptr;
++  } else {
++    assert(this != tls_current_ && "Destroy called on the currently running fiber");
++    std::free(stack_);
++  }
++  delete this;
++}
++
++}  // namespace rex::thread
++
++#endif  // REX_PLATFORM_ANDROID
+-- 
+2.43.0
+
