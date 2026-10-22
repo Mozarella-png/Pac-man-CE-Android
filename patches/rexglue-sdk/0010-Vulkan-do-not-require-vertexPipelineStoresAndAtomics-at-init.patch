@@ -1,0 +1,59 @@
+From 8a8900447eb6e4b7c0770578c88c9e700910274b Mon Sep 17 00:00:00 2001
+From: patch <a@b.c>
+Date: Thu, 22 Oct 2026 00:09:02 +0000
+Subject: [PATCH] Vulkan: do not require vertexPipelineStoresAndAtomics at init
+
+Only vertex shaders that export memory (memexport) need the feature. The
+translator already drops memexport for vertex shaders without it, and
+IssueDraw rejects such draws with an error. Requiring the feature up front
+blocked every game on GPUs that lack it (e.g. Mali-G925), even when the game
+never uses memexport. Make the device check and the SetupContext check
+warnings instead of failures.
+---
+ src/graphics/vulkan/command_processor.cpp | 8 ++++----
+ src/ui/vulkan/vulkan_device.cpp           | 8 +++++---
+ 2 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/src/graphics/vulkan/command_processor.cpp b/src/graphics/vulkan/command_processor.cpp
+index 001f36b..f5b4eb2 100644
+--- a/src/graphics/vulkan/command_processor.cpp
++++ b/src/graphics/vulkan/command_processor.cpp
+@@ -930,10 +930,10 @@ bool VulkanCommandProcessor::SetupContext() {
+     return false;
+   }
+   if (!device_properties.vertexPipelineStoresAndAtomics) {
+-    REXGPU_ERROR(
+-        "Vulkan vertexPipelineStoresAndAtomics is required for GPU emulation and "
+-        "D3D12 parity, but unsupported by the selected device");
+-    return false;
++    // Not fatal (see VulkanDevice): memexport vertex draws are rejected in IssueDraw.
++    REXGPU_WARN(
++        "Vulkan vertexPipelineStoresAndAtomics is unsupported by the selected device: "
++        "memexport vertex draws will be rejected, other draws run normally");
+   }
+   if (!device_properties.geometryShader) {
+     if (REXCVAR_GET(vulkan_require_geometry_shader)) {
+diff --git a/src/ui/vulkan/vulkan_device.cpp b/src/ui/vulkan/vulkan_device.cpp
+index 8197bb4..5d3be03 100644
+--- a/src/ui/vulkan/vulkan_device.cpp
++++ b/src/ui/vulkan/vulkan_device.cpp
+@@ -117,11 +117,13 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
+       return nullptr;
+     }
+     if (!supported_features.vertexPipelineStoresAndAtomics) {
++      // Not fatal: only vertex shaders that export memory (memexport) need it, and the
++      // translator and draw path already skip or reject those draws. Games that don't
++      // use memexport run on such devices (e.g. Mali, which lacks the feature).
+       REXLOG_WARN(
+-          "Vulkan device '{}' doesn't support vertexPipelineStoresAndAtomics, which "
+-          "is required for Vulkan GPU emulation parity",
++          "Vulkan device '{}' doesn't support vertexPipelineStoresAndAtomics; "
++          "memexport vertex draws will be rejected, other draws are unaffected",
+           properties.deviceName);
+-      return nullptr;
+     }
+     if (REXCVAR_GET(vulkan_require_geometry_shader) && !supported_features.geometryShader) {
+       REXLOG_WARN(
+-- 
+2.43.0
+
